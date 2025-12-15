@@ -6,7 +6,7 @@ This project implements a reproducible data engineering pipeline and interactive
 
 ### 1. ETL Architecture
 We treat the official DfT specifications and the `stats19` R package as reference standards but implement an independent pipeline:
-- **Ingestion**: Raw CSVs (2020-2024) are processed using Pandas.
+- **Ingestion**: Raw CSVs (2000-2024) are processed using Pandas.
 - **Standardization**: Column names are normalized to snake_case; categorical integers are decoded using a materialized `code_map` dimension table.
 - **Storage**: Cleaned data is stored in DuckDB, a high-performance in-process SQL OLAP database.
 
