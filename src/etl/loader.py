@@ -22,39 +22,31 @@ def save_to_duckdb(cleaned_dfs: dict[str, pd.DataFrame], db_path: str) -> None:
     print(f"Creating DuckDB database at {db_path}...")
     con = duckdb.connect(str(db_path))
 
-    # ========== 1. 把所有 DataFrame 写入 DuckDB ==========
     for name, df in cleaned_dfs.items():
         df_export = df.copy()
 
-        # --- 1.1 处理 GeoDataFrame / geometry 列 ---
         if (GEO_DATAFRAME_TYPE is not None and isinstance(df_export, GEO_DATAFRAME_TYPE)) or (
             "geometry" in df_export.columns
         ):
             if "geometry" in df_export.columns:
-                # 看看这一列里有没有真正的 geometry 对象
                 non_null = df_export["geometry"].dropna()
                 first_valid = non_null.iloc[0] if not non_null.empty else None
 
                 if first_valid is not None and hasattr(first_valid, "wkt"):
-                    # 真的有 shapely 几何 → 转成 WKT 字符串
                     df_export["geometry"] = df_export["geometry"].apply(
                         lambda x: x.wkt if (x is not None and hasattr(x, "wkt")) else None
                     )
                 else:
-                    # 否则当普通对象列，直接转成字符串，避免 UserWarning
                     df_export["geometry"] = df_export["geometry"].astype(str)
 
-        # --- 1.2 DuckDB 不喜欢混类型的 object 列 → 统一转成 str ---
         for col in df_export.columns:
             if df_export[col].dtype == "object":
                 df_export[col] = df_export[col].astype(str)
 
-        # --- 1.3 注册临时表写入 DuckDB ---
         con.register("temp_df", df_export)
         con.execute(f"CREATE OR REPLACE TABLE {name} AS SELECT * FROM temp_df")
         con.unregister("temp_df")
 
-    # ========== 2. 创建预聚合表 ==========
     print("Creating pre-aggregated tables (kpi_monthly, by_hour, by_dow)...")
 
     con.execute(
@@ -145,15 +137,12 @@ def save_to_duckdb(cleaned_dfs: dict[str, pd.DataFrame], db_path: str) -> None:
     """)
 
     
-
-    # 可选：给 kpi_daily 加索引，进一步加速 date 范围查询（DuckDB 新版才支持）
     try:
         con.execute("CREATE INDEX IF NOT EXISTS idx_kpi_daily_date ON kpi_daily(date);")
         print("[opt] CREATE INDEX idx_kpi_daily_date ON kpi_daily(date);")
     except Exception as e:
         print(f"[opt] Could not create index on kpi_daily: {e}")
 
-    # ========== 3. DuckDB 侧优化：线程数 + 索引 ==========
     try:
         con.execute("PRAGMA threads=4;")
         print("[opt] Set DuckDB threads = 4")
@@ -172,7 +161,6 @@ def save_to_duckdb(cleaned_dfs: dict[str, pd.DataFrame], db_path: str) -> None:
             con.execute(stmt)
             print(f"[opt] {stmt}")
         except Exception as e:
-            # 有些 DuckDB 版本可能不支持持久化索引，失败就打印一下，不影响主流程
             print(f"[opt] Failed to run '{stmt}': {e}")
 
     con.close()
