@@ -1,0 +1,122 @@
+To regenerate the file names use the following script:
+
+```{r}
+library(rvest)
+library(stringr)
+u = paste0(
+  "https://data.gov.uk/dataset/",
+  "cb7ae6f0-4be6-4935-9277-47e5ce24a11f/road-safety-data")
+u = "https://www.data.gov.uk/dataset/cb7ae6f0-4be6-4935-9277-47e5ce24a11f/road-accidents-safety-data"
+page = read_html(u)
+all_links = page %>%
+  html_nodes("a") %>%       # find all links
+  html_attr("href")
+
+r = all_links %>% str_subset("\\.csv")
+
+dr = c()
+for(i in 1:length(r)) {
+  dr[i] = sub("https://data.dft.gov.uk/road-accidents-safety-data/",
+              "", URLdecode(r[i]))
+  dr[i] = sub("https://data.dft.gov.uk/road-accidents-safety-data/",
+              "", dr[i])
+}
+
+file_names = setNames(as.list(dr), dr)
+file_name_df = tibble::tibble(
+  file_name = unlist(file_names),
+  url = r
+  )
+usethis::use_data(file_names, overwrite = TRUE)
+
+# get original stats19 data filenames
+download.file("https://github.com/ropensci/stats19/raw/master/data/file_names.rda", "file_names_old.rda")
+load("file_names_old.rda")
+file_names_old = file_names
+usethis::use_data(file_names_old, overwrite = TRUE)
+file_names = setNames(as.list(dr), dr)
+# compare the objects
+waldo::compare(file_names_old, file_names)
+class(file_names_old)
+file_names_char = unlist(file_names)
+writeLines(file_names_char, "data-raw/file_names.txt")
+readr::write_csv(file_name_df, "data-raw/file_name_df.csv")
+file.edit("data-raw/file_names.txt")
+file.remove("file_names_old.rda")
+# All file names with 1979 in the name
+file_names_1979 = file_names[grepl("1979", names(file_names))]
+# $`dft-road-casualty-statistics-casualty-1979-latest-published-year.csv`
+# [1] "dft-road-casualty-statistics-casualty-1979-latest-published-year.csv"
+
+# $`dft-road-casualty-statistics-vehicle-1979-latest-published-year.csv`
+# [1] "dft-road-casualty-statistics-vehicle-1979-latest-published-year.csv"
+
+# $`dft-road-casualty-statistics-collision-1979-latest-published-year.csv`
+# [1] "dft-road-casualty-statistics-collision-1979-latest-published-year.csv"
+
+# 2023 data:
+file_names_2023 = file_names[grepl("2023", names(file_names))]
+
+usethis::use_data(file_names, overwrite = TRUE)
+```
+
+The `accidents_sample_raw` can be (re)generated using:
+
+```{r}
+devtools::load_all()
+# Obtained with:
+dl_stats19(year = 2023, type = "collision")
+accidents_2023_raw = read_collisions(year = 2023)
+accidents_2023_raw = get_stats19(year = 2023, type = "collision", data_dir = tempdir(), format = FALSE)
+set.seed(350)
+sel = sample(nrow(accidents_2023_raw), 3)
+accidents_sample_raw = accidents_2023_raw[sel, ]
+# accidents_sample = format_collisions(accidents_sample_raw)
+accidents_sample = accidents_sample_raw
+accidents_sample_formatted = format_collisions(accidents_sample)
+waldo::compare(accidents_sample_raw, accidents_sample_formatted)
+usethis::use_data(accidents_sample_raw, overwrite = TRUE)
+usethis::use_data(accidents_sample, overwrite = TRUE)
+```
+
+Similarly for casualites, use:
+
+```{r}
+# Obtained with:
+casualties_2023_raw = get_stats19(year = 2023, type = "casualty", data_dir = tempdir(), format = FALSE)
+set.seed(350)
+sel = sample(nrow(casualties_2023_raw), 3)
+casualties_sample_raw = casualties_2023_raw[sel, ]
+# casualties_sample = format_casualties(casualties_sample_raw)
+casualties_sample = casualties_sample_raw
+casualties_sample_formatted = format_casualties(casualties_sample)
+waldo::compare(casualties_sample_raw, casualties_sample_formatted)
+usethis::use_data(casualties_sample, overwrite = TRUE)
+```
+
+and for vehicles, use:
+
+```{r}
+vehicles_2023_raw = get_stats19(year = 2023, type = "vehicle", data_dir = tempdir(), format = FALSE)
+set.seed(350)
+sel = sample(nrow(vehicles_2023_raw), 3)
+vehicles_sample_raw = vehicles_2023_raw[sel, ]
+vehicles_sample_formatted = format_vehicles(vehicles_sample_raw)
+vehicles_sample = vehicles_2023_raw[sel,]
+waldo::compare(vehicles_sample_raw, vehicles_sample_formatted)
+usethis::use_data(vehicles_sample, overwrite = TRUE)
+```
+
+Also, to (re)generate the `police_boundaries` data, use:
+
+```{r}
+# Obtained with:
+library(sf)
+u = "https://opendata.arcgis.com/datasets/3e5a096a8c7c456fb6d3164a3f44b005_3.geojson"
+police_boundaries_wgs = sf::st_read(u)
+names(police_boundaries_wgs)
+police_boundaries = st_transform(police_boundaries_wgs, 27700)
+names(police_boundaries)
+police_boundaries = police_boundaries[c("pfa16cd", "pfa16nm")]
+```
+

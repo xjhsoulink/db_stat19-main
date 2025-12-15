@@ -1,0 +1,148 @@
+\documentclass{article}
+\usepackage{graphicx} % Required for inserting images
+\usepackage[colorlinks=true,linkcolor=black,urlcolor=blue,citecolor=blue]{hyperref}
+
+\title{MileStone 2 - Great Britain Road Safety Data Visualization}
+\author{Yingchuan Sun, Jiahong Xu, Carter Cheng}
+\date{November 11 2025}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+We aim to turn the UK government’s Road Safety Data (also known as STATS19) into an intuitive, open website for public analysis and exploration.
+
+The \href{https://www.gov.uk/government/statistics/road-safety-data}{Road Safety Data (STATS19)} dataset, published by the UK Department for Transport (DfT), contains police-reported road traffic collisions across Great Britain. It consists of three linked tables—collisions, vehicles, and casualties.
+In this project, we focus on the five most recent years (2020–2024), which include approximately 0.5 million collision records. Each record provides time and date, location (latitude/longitude and grid references), accident severity (Fatal/Serious/Slight), numbers of vehicles and casualties, road type and speed limit, weather and light conditions, road surface, local authority and police force, and contributory factors.
+
+
+Our project will develop a open-source and interactive web platform built on DuckDB with a streamlit UI. The platform will provide interactive maps, trend charts, and severity-aware comparisons that make the data easy to explore and understand. The website will help planners, researchers, and the public use this dataset as a reliable reference for improving road safety outcomes.
+
+
+\section{Feature list}
+
+\begin{itemize}
+  \item \textbf{Data Cleaning (15\%)} 
+  
+  Deliver a reproducible pipeline that ingests the STATS19 tables and outputs a unified analytic schema. Tasks include dropping records with missing or invalid latitude or longitude, decoding categorical codes to readable labels using a codebook, standardizing date, hour, day of week, and month, and harmonizing accident severity across years with a toggle for original versus adjusted series.
+  \begin{itemize}
+    \item \textbf{Sample queries:} coordinate validation; code to label mapping; derive \texttt{month = date\_trunc('month', accident\_date)}.
+    \item \textbf{Success:} one command builds the dataset and all cleaned tables.
+  \end{itemize}
+
+  \item \textbf{Overview Dashboard (20\%)}
+  
+  Show the annual and monthly safety picture: collisions, casualties, and severity composition, plus year over year and month over month changes. Include a switch to compare original and adjusted severity series.
+  \begin{itemize}
+    \item \textbf{Sample queries:} monthly counts by severity; cumulative year totals.
+    \item \textbf{Success:} choosing a year updates charts and values match backend aggregates. Load everything within 1.5 seconds.
+  \end{itemize}
+
+  \item \textbf{Interactive Heatmap (25\%)} 
+  
+  Visualize collision locations as a heatmap with filters for severity, weekday, hour, road type, speed limit, weather, light, and surface conditions.
+  \begin{itemize}
+    \item \textbf{Sample queries:} select records for a chosen year with non null latitude and longitude and active filters.
+    \item \textbf{Success:} smooth map interaction that load within 2 seconds, and all plotted points have valid coordinates.
+  \end{itemize}
+
+  \item \textbf{Mode and Demographics Explorer (20\%)} 
+  
+  Present casualties by road user type such as pedestrian, pedal cycle, motorcycle, and car, with severity breakdowns and demographic splits by age group and sex.
+  \begin{itemize}
+    \item \textbf{Sample queries:} counts from the casualty table grouped by \texttt{casualty\_class}, \texttt{casualty\_severity}, age bins, and sex.
+    \item \textbf{Success:} clicking a user type filters linked charts and unknown age is shown explicitly.
+  \end{itemize}
+
+  \item \textbf{Road and Environment $\times$ Severity  (20\%)} 
+  
+  Analyze how conditions relate to outcomes: speed limit, road type, junction control, road surface, light, and weather. Provide single dimension and two way views.
+  \begin{itemize}
+    \item \textbf{Sample queries:} counts by \texttt{speed\_limit} and severity; two way pivot such as \texttt{road\_type} by \texttt{light\_conditions}.
+  \end{itemize}
+
+  \item \textbf{Documentation and Deployment} 
+  Provide clear setup, data update, and deployment instructions. Include a one command local run and a hosted option.
+  \begin{itemize}
+    \item \textbf{Success:} a new machine reproduces the pipeline and launches the site easily.
+  \end{itemize}
+\end{itemize}
+
+\section{Database Design}
+\section*{Technology Stack}
+\begin{itemize}
+  \item \textbf{Frontend:} Streamlit for UI; Plotly for charts; PyDeck for maps.
+  \item \textbf{Backend/Data:} Python (pandas, DuckDB). 
+  \item \textbf{Deploy:} \texttt{requirements.txt} + run script.
+\end{itemize}
+
+\section*{Initial Database Design (Schema)}
+\begin{itemize}
+  \item \texttt{collision} (PK: \texttt{accident\_index}): date, time, latitude, longitude, severity, vehicle/casualty counts, road\_type, speed\_limit, weather, light, surface, authority.
+  \item \texttt{vehicle} (PK: \texttt{accident\_index, vehicle\_reference}; FK$\rightarrow$\texttt{collision}): vehicle\_type, manoeuvre, driver\_age, driver\_sex, towing, etc.
+  \item \texttt{casualty} (PK: \texttt{accident\_index, casualty\_reference}; FK$\rightarrow$\texttt{collision}): casualty\_class, casualty\_severity, age, sex, position, etc.
+  \item \texttt{contributory\_factor} (PK: \texttt{accident\_index, factor\_code, rank}; FK$\rightarrow$\texttt{collision}): one row per factor mention.
+  \item \texttt{code\_map}: lookup of STATS19 codes to human-readable labels.
+\end{itemize}
+
+\section*{Expected Size}
+\begin{itemize}
+  \item \textbf{Columns per table:} \texttt{collision} 44; \texttt{vehicle} 32; \texttt{casualty} 23.
+  \item \textbf{Five-year total:} $\sim$0.5M collisions, $\sim$0.92M vehicles, $\sim$0.64M casualties.
+\end{itemize}
+
+\section*{Assumptions}
+\begin{enumerate}
+  \item We analyze GB police-reported injury collisions only (STATS19). Property-damage-only events are out of scope.
+  \item All categorical fields are decoded with  code lists and normalized via a \texttt{code\_map} for cross-year consistency.
+  \item Because the definition of severity changed over time, the UI offers an Original vs Adjusted severity toggle in trends.
+  \item Map views include only valid latitude/longitude.
+\end{enumerate}
+
+\section*{Task List}
+
+\textbf{Setup}
+\begin{itemize}
+  \item Create the repository and set up the Python environment.
+  \item Provide a script to run setup and start the app.
+\end{itemize}
+
+\noindent\textbf{Data and ETL}
+\begin{itemize}
+  \item Ingest CSVs
+  \item Build code\_map
+  \item Decode coded columns
+  \item Persist to DuckDB
+\end{itemize}
+
+\noindent\textbf{Database}
+\begin{itemize}
+  \item Create DuckDB tables: \texttt{collision}, \texttt{vehicle}, \texttt{casualty}, \texttt{contributory\_factor}, \texttt{code\_map}.
+  \item Build pre-aggregated tables: \texttt{kpi\_monthly}, \texttt{by\_hour}, \texttt{by\_dow}.
+\end{itemize}
+
+\noindent\textbf{Checks}
+\begin{itemize}
+  \item Add tests for code mapping, time parsing, foreign-key joins, and coordinate validity.
+  \item Verify key queries finish in an acceptable time.
+\end{itemize}
+
+\noindent\textbf{Backend Queries}
+\begin{itemize}
+  \item Implement Python functions for overview KPIs, heatmap data, mode/demographics, and road/environment~$\times$~severity.
+\end{itemize}
+
+\noindent\textbf{Frontend (Streamlit)}
+\begin{itemize}
+  \item Build sidebar filters: year, severity, time, conditions.
+  \item Implement pages: Overview, Heatmap, Mode \& Demographics, Road \& Environment.
+\end{itemize}
+
+\noindent\textbf{Docs and Deploy}
+\begin{itemize}
+  \item Write a concise README with run steps and data caveats.
+  \item Deploy to cloud and confirm it loads.
+\end{itemize}
+
+\end{document}

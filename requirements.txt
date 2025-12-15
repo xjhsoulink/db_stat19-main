@@ -1,0 +1,9 @@
+streamlit
+duckdb
+pandas
+plotly
+pydeck
+geopandas
+shapely
+pytest
+requests

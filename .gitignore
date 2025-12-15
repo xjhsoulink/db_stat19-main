@@ -1,0 +1,16 @@
+./data
+*.duckdb
+*.csv
+*.docx
+*.xlsx
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Environments
+.env
+.venv
+env/
+venv/
