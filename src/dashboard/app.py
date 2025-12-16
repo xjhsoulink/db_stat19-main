@@ -6,6 +6,8 @@ from src.dashboard.tabs.overview import render_overview_tab
 from src.dashboard.tabs.heatmap import render_heatmap_tab
 from src.dashboard.tabs.demographics import render_demographics_tab
 from src.dashboard.tabs.environment import render_environment_tab
+from src.dashboard.tabs.hotspots import render_hotspots_tab
+
 
 st.set_page_config(
     page_title='GB Road Safety Dashboard',
@@ -14,6 +16,10 @@ st.set_page_config(
 )
 
 def main():
+
+    st.write("APP VERSION: hotspots-enabled") 
+  
+
     st.title('Great Britain Road Safety Data (STATS19)')
     st.markdown('Analysis of police-reported road traffic collisions (2000–2024)')
 
@@ -24,7 +30,8 @@ def main():
     # ★ filters.py 应该返回这 6 个东西（下面会统一用）
     time_mode, selected_year, selected_month, selected_severity, severity_filter, date_range = render_sidebar(con)
 
-    tab1, tab2, tab3, tab4 = st.tabs(['Overview', 'Heatmap', 'Mode & Demographics', 'Road & Environment'])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(['Overview', 'Heatmap', 'Hotspots', 'Mode & Demographics', 'Road & Environment'])
+
 
     with tab1:
         render_overview_tab(con, time_mode, selected_year, selected_month, selected_severity, date_range)
@@ -33,10 +40,14 @@ def main():
         render_heatmap_tab(con, time_mode, selected_year, selected_month, severity_filter, date_range)
 
     with tab3:
-        render_demographics_tab(con, time_mode, selected_year, selected_month, severity_filter, date_range)
+        render_hotspots_tab(con, time_mode, selected_year, selected_month, severity_filter, date_range)
 
     with tab4:
+        render_demographics_tab(con, time_mode, selected_year, selected_month, severity_filter, date_range)
+
+    with tab5:
         render_environment_tab(con, time_mode, selected_year, selected_month, severity_filter, date_range)
+
 
 if __name__ == "__main__":
     main()

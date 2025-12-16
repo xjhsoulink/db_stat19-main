@@ -1,129 +1,62 @@
-'''
+# file: src/dashboard/data.py
+from __future__ import annotations
 
 from src.shared.database import run_query
+
+
+def _quote_list_str(values: list[str]) -> str:
+    """
+    Quote a list of strings into SQL IN-list format:
+      ["Fatal","Serious"] -> "('Fatal','Serious')"
+    """
+    quoted = ",".join([f"'{v}'" for v in values])
+    return f"({quoted})"
+
+
+def _sev_clause(severity_filter: str | None, alias: str | None = None) -> str:
+    """
+    Normalize a severity filter into a safe SQL fragment.
+
+    Accept both styles:
+      - "collision_severity IN ('Fatal','Serious')"     (recommended / new)
+      - "AND collision_severity IN (...)"              (legacy / old)
+      - "collision_severity = 'Fatal'"
+      - "1=0"                                          (no selection)
+
+    Return:
+      - "" (empty) if input is None/blank
+      - " AND (<expr>)" otherwise
+
+    If alias is provided (e.g., alias="col"), replace column references:
+      collision_severity -> col.collision_severity
+    """
+    if not severity_filter:
+        return ""
+
+    s = severity_filter.strip()
+    if not s:
+        return ""
+
+    # Tolerate legacy style with a leading AND
+    if s.upper().startswith("AND "):
+        s = s[4:].strip()
+
+    # Apply alias for joined-table queries
+    if alias:
+        s = s.replace("collision_severity", f"{alias}.collision_severity")
+
+    return f" AND ({s})"
+
 
 def get_years(con):
     try:
         tables = run_query("SHOW TABLES", con)
-        if tables is None or 'collision' not in tables['name'].values:
+        if tables is None or "collision" not in tables["name"].values:
             return []
         years_df = run_query("SELECT DISTINCT year FROM collision ORDER BY year DESC", con)
         if years_df is None:
             return []
-        return years_df['year'].tolist()
-    except Exception:
-        return []
-
-def get_kpi_data(con, year, severity_filter_cols):
-    # severity_filter_cols is a tuple of (cols_coll, cols_cas, cols_veh)
-    cols_coll, cols_cas, cols_veh = severity_filter_cols
-    
-    kpi_query = f"""
-        SELECT 
-            SUM({cols_coll}) as total_collisions,
-            SUM({cols_cas}) as total_casualties,
-            SUM({cols_veh}) as total_vehicles
-        FROM kpi_monthly
-        WHERE year = {year}
-    """
-    return run_query(kpi_query, con)
-
-def get_monthly_trend(con, year, cols):
-    trend_query = f"""
-        SELECT 
-            month_num,
-            month,
-            {cols}
-        FROM kpi_monthly
-        WHERE year = {year}
-        ORDER BY month_num
-    """
-    return run_query(trend_query, con)
-
-def get_map_data(con, year, severity_filter, road_type_filter, weather_filter, light_filter):
-    map_query = f"""
-        SELECT 
-            latitude, 
-            longitude,
-            collision_severity,
-            date,
-            time,
-            number_of_casualties,
-            number_of_vehicles
-        FROM collision_geopoints 
-        WHERE year = {year}
-        {severity_filter}
-    """
-    if road_type_filter:
-        map_query += road_type_filter
-    if weather_filter:
-        map_query += weather_filter
-    if light_filter:
-        map_query += light_filter
-        
-    map_query += " LIMIT 50000"
-    return run_query(map_query, con)
-
-def get_demographics_data(con, year, severity_filter, filters):
-    demo_query = f"""
-        SELECT 
-            c.casualty_type,
-            c.age_group,
-            c.sex_of_casualty,
-            c.casualty_severity,
-            COUNT(*) as count
-        FROM casualty c
-        JOIN collision col ON c.collision_index = col.collision_index
-        WHERE col.year = {year}
-        {severity_filter.replace('collision_severity', 'col.collision_severity')}
-    """
-    for f in filters:
-        demo_query += f
-        
-    demo_query += """
-        GROUP BY c.casualty_type, c.age_group, c.sex_of_casualty, c.casualty_severity
-    """
-    return run_query(demo_query, con)
-
-def get_factor_data(con, year, severity_filter, primary_col):
-    query = f"""
-        SELECT 
-            {primary_col}, 
-            collision_severity,
-            COUNT(*) as count
-        FROM collision
-        WHERE year = {year}
-        {severity_filter}
-        GROUP BY {primary_col}, collision_severity
-        ORDER BY count DESC
-    """
-    return run_query(query, con)
-
-def get_interaction_data(con, year, severity_filter, primary_col, secondary_col):
-    query = f"""
-        SELECT 
-            {primary_col}, 
-            {secondary_col},
-            COUNT(*) as count
-        FROM collision
-        WHERE year = {year}
-        {severity_filter}
-        GROUP BY {primary_col}, {secondary_col}
-    """
-    return run_query(query, con)
-'''
-
-from src.shared.database import run_query
-
-def get_years(con):
-    try:
-        tables = run_query("SHOW TABLES", con)
-        if tables is None or 'collision' not in tables['name'].values:
-            return []
-        years_df = run_query("SELECT DISTINCT year FROM collision ORDER BY year DESC", con)
-        if years_df is None:
-            return []
-        return years_df['year'].tolist()
+        return years_df["year"].tolist()
     except Exception:
         return []
 
@@ -134,7 +67,7 @@ def get_kpi_data(con, year, severity_filter_cols):
     e.g. ("fatal + serious", "fatal_casualties + serious_casualties", ...)
     """
     cols_coll, cols_cas, cols_veh = severity_filter_cols
-    
+
     kpi_query = f"""
         SELECT 
             SUM({cols_coll})  AS total_collisions,
@@ -148,9 +81,10 @@ def get_kpi_data(con, year, severity_filter_cols):
 
 def get_monthly_trend(con, year, cols):
     """
-    从 kpi_monthly 中取出某年的每月趋势。
-    cols 是类似 "fatal, serious, slight" 或
-    "adj_fatal as fatal, adj_serious as serious, adj_slight as slight"。
+    Fetch monthly KPI trend from kpi_monthly for a given year.
+    cols can be:
+      - "fatal, serious, slight"
+      - "adj_fatal as fatal, adj_serious as serious, adj_slight as slight"
     """
     trend_query = f"""
         SELECT 
@@ -163,9 +97,10 @@ def get_monthly_trend(con, year, cols):
     """
     return run_query(trend_query, con)
 
+
 def get_daily_trend(con, year, month):
     """
-    返回某年某月的“每天 × 严重程度”的碰撞数量，用于单月视图。
+    Return daily collisions by severity for a given year/month (for single-month view).
     """
     query = f"""
         SELECT 
@@ -180,9 +115,10 @@ def get_daily_trend(con, year, month):
     """
     return run_query(query, con)
 
+
 def get_date_range(con):
     """
-    返回 collision 表里的 (min_date, max_date)，用于自定义时间范围控件。
+    Return (min_date, max_date) from collision table for custom range UI.
     """
     df = run_query("SELECT MIN(date) AS min_date, MAX(date) AS max_date FROM collision", con)
     if df is None or df.empty:
@@ -192,18 +128,18 @@ def get_date_range(con):
 
 def get_kpi_range(con, start_date, end_date, selected_severity):
     """
-    自定义日期范围下的三大 KPI：
-    - start_date / end_date: Python 的 date 对象或 'YYYY-MM-DD' 字符串
-    - selected_severity: ['Fatal','Serious','Slight'] 的子集
+    KPI totals under custom date range:
+      - start_date / end_date: Python date objects or 'YYYY-MM-DD'
+      - selected_severity: subset of ['Fatal','Serious','Slight']
     """
     if not selected_severity:
         return None
 
-    # 构造严重程度过滤条件
+    # Build a local severity filter (this function receives a list, not the sidebar expression)
     if len(selected_severity) == 1:
-        sev_filter = f"AND collision_severity = '{selected_severity[0]}'"
+        sev_filter = f" AND collision_severity = '{selected_severity[0]}'"
     else:
-        sev_filter = f"AND collision_severity IN {tuple(selected_severity)}"
+        sev_filter = f" AND collision_severity IN {_quote_list_str(selected_severity)}"
 
     query = f"""
         SELECT
@@ -219,16 +155,16 @@ def get_kpi_range(con, start_date, end_date, selected_severity):
 
 def get_daily_trend_range(con, start_date, end_date, selected_severity):
     """
-    返回某个日期范围内，按“日期 × 严重程度”的时间序列，用于画折线图。
+    Return time series within date range: date × severity -> collisions count.
     """
     if not selected_severity:
-        # 返回空 DataFrame，调用端自己处理
+        # Return empty DataFrame; caller can handle.
         return run_query("SELECT date, collision_severity AS severity, 0 AS count LIMIT 0", con)
 
     if len(selected_severity) == 1:
-        sev_filter = f"AND collision_severity = '{selected_severity[0]}'"
+        sev_filter = f" AND collision_severity = '{selected_severity[0]}'"
     else:
-        sev_filter = f"AND collision_severity IN {tuple(selected_severity)}"
+        sev_filter = f" AND collision_severity IN {_quote_list_str(selected_severity)}"
 
     query = f"""
         SELECT
@@ -244,125 +180,20 @@ def get_daily_trend_range(con, start_date, end_date, selected_severity):
     return run_query(query, con)
 
 
-'''
-def get_map_data(con, year, month_filter, severity_filter,
-                 road_type_filter, weather_filter, light_filter):
-    """
-    热力图使用的地理点数据，来自 collision_geopoints。
-    - year: 年份
-    - month_filter: "" 或 " AND month(date) = X"
-    - severity_filter: 形如 "AND collision_severity IN (...)" 的片段
-    - road_type_filter / weather_filter / light_filter: 由 heatmap tab 拼好的 SQL 片段
-    """
-    map_query = f"""
-        SELECT 
-            latitude, 
-            longitude,
-            collision_severity,
-            date,
-            time,
-            number_of_casualties,
-            number_of_vehicles
-        FROM collision_geopoints 
-        WHERE year = {year}
-        {month_filter}
-        {severity_filter}
-    """
-    if road_type_filter:
-        map_query += road_type_filter
-    if weather_filter:
-        map_query += weather_filter
-    if light_filter:
-        map_query += light_filter
-        
-    map_query += " LIMIT 50000"
-    return run_query(map_query, con)
-
-
-def get_demographics_data(con, year, month_filter, severity_filter, filters):
-    """
-    人群画像（demographics）分析：
-    - year: 年份
-    - month_filter: "" 或 " AND month(col.date) = X"
-    - severity_filter: 形如 "AND collision_severity IN (...)" 的片段，
-      在这里会自动替换成 "col.collision_severity"
-    - filters: 来自 demographics tab 的其他条件列表
-    """
-    demo_query = f"""
-        SELECT 
-            c.casualty_type,
-            c.age_group,
-            c.sex_of_casualty,
-            c.casualty_severity,
-            COUNT(*) as count
-        FROM casualty c
-        JOIN collision col ON c.collision_index = col.collision_index
-        WHERE col.year = {year}
-        {month_filter}
-        {severity_filter.replace('collision_severity', 'col.collision_severity')}
-    """
-    for f in filters:
-        demo_query += f
-        
-    demo_query += """
-        GROUP BY 
-            c.casualty_type, 
-            c.age_group, 
-            c.sex_of_casualty, 
-            c.casualty_severity
-    """
-    return run_query(demo_query, con)
-
-
-def get_factor_data(con, year, month_filter, severity_filter, primary_col):
-    """
-    按单一环境因素统计不同严重程度下的碰撞数量。
-    - year: 年份
-    - month_filter: "" 或 " AND month(date) = X"
-    - severity_filter: "AND collision_severity IN (...)" 之类
-    - primary_col: 要分析的列名（如 'road_type'）
-    """
-    query = f"""
-        SELECT 
-            {primary_col}, 
-            collision_severity,
-            COUNT(*) as count
-        FROM collision
-        WHERE year = {year}
-        {month_filter}
-        {severity_filter}
-        GROUP BY {primary_col}, collision_severity
-        ORDER BY count DESC
-    """
-    return run_query(query, con)
-
-
-def get_interaction_data(con, year, month_filter, severity_filter, primary_col, secondary_col):
-    """
-    两个环境因素的交叉分析，用于环境 tab 里的热力图。
-    """
-    query = f"""
-        SELECT 
-            {primary_col}, 
-            {secondary_col},
-            COUNT(*) as count
-        FROM collision
-        WHERE year = {year}
-        {month_filter}
-        {severity_filter}
-        GROUP BY {primary_col}, {secondary_col}
-    """
-    return run_query(query, con)
-'''
-
 def get_map_data(con, time_filter, severity_filter,
                  road_type_filter, weather_filter, light_filter):
     """
-    热力图用的地理点数据（collision_geopoints）：
-    - time_filter: 形如 " AND year = 2024" 或 " AND date BETWEEN '2024-01-01' AND '2024-03-31'"
-    - severity_filter: "AND collision_severity IN (...)" 这种
-    其他 filter 由 tab 拼好传入。
+    Map point data from collision_geopoints.
+
+    - time_filter: a fragment produced by Heatmap tab (must start with ' AND ...')
+                 e.g. " AND year = 2024" or " AND date BETWEEN '2024-01-01' AND '2024-03-31'"
+    - severity_filter: recommended to be a pure boolean expression (no leading AND),
+                       e.g. "collision_severity IN ('Fatal','Serious')"
+                       but legacy "AND ..." is also tolerated.
+    - other filters: fragments created in tab layer (typically start with ' AND ...')
     """
+    sev = _sev_clause(severity_filter)
+
     map_query = f"""
         SELECT 
             latitude, 
@@ -375,7 +206,7 @@ def get_map_data(con, time_filter, severity_filter,
         FROM collision_geopoints 
         WHERE 1=1
         {time_filter}
-        {severity_filter}
+        {sev}
     """
     if road_type_filter:
         map_query += road_type_filter
@@ -390,11 +221,17 @@ def get_map_data(con, time_filter, severity_filter,
 
 def get_demographics_data(con, time_filter, severity_filter, filters):
     """
-    人群统计：
-    - time_filter: 注意使用 col.year / col.date（在 tab 里已经按 alias 拼好）
-    - severity_filter: 用 collision_severity 写，内部会替换成 col.collision_severity
-    - filters: demographics.py 里的人口条件 [" AND c.casualty_class = ...", ...]
+    Demographics analysis via casualty JOIN collision.
+
+    - time_filter: already built for alias 'col' (from demographics tab),
+                  e.g. " AND col.year = 2024" or " AND col.date BETWEEN ..."
+    - severity_filter: pure expression on collision_severity (no leading AND),
+                       will be aliased to col.collision_severity here.
+    - filters: additional fragments from demographics tab, typically like:
+              [" AND c.sex_of_casualty = 'Male'", ...]
     """
+    sev = _sev_clause(severity_filter, alias="col")
+
     demo_query = f"""
         SELECT 
             c.casualty_type,
@@ -406,7 +243,7 @@ def get_demographics_data(con, time_filter, severity_filter, filters):
         JOIN collision col ON c.collision_index = col.collision_index
         WHERE 1=1
         {time_filter}
-        {severity_filter.replace('collision_severity', 'col.collision_severity')}
+        {sev}
     """
     for f in filters:
         demo_query += f
@@ -423,9 +260,13 @@ def get_demographics_data(con, time_filter, severity_filter, filters):
 
 def get_factor_data(con, time_filter, severity_filter, primary_col):
     """
-    环境因素单维统计：
-    - time_filter: year/month/date 范围，对 collision 直接用 year/date 列
+    Single-factor environment breakdown from collision table.
+
+    - time_filter: produced by Environment tab (must start with ' AND ...')
+    - severity_filter: pure expression preferred; legacy 'AND ...' tolerated.
     """
+    sev = _sev_clause(severity_filter)
+
     query = f"""
         SELECT 
             {primary_col}, 
@@ -434,7 +275,7 @@ def get_factor_data(con, time_filter, severity_filter, primary_col):
         FROM collision
         WHERE 1=1
         {time_filter}
-        {severity_filter}
+        {sev}
         GROUP BY {primary_col}, collision_severity
         ORDER BY count DESC
     """
@@ -443,8 +284,13 @@ def get_factor_data(con, time_filter, severity_filter, primary_col):
 
 def get_interaction_data(con, time_filter, severity_filter, primary_col, secondary_col):
     """
-    环境因素交互统计。
+    Two-factor interaction analysis (counts) from collision table.
+
+    - time_filter: produced by Environment tab (must start with ' AND ...')
+    - severity_filter: pure expression preferred; legacy 'AND ...' tolerated.
     """
+    sev = _sev_clause(severity_filter)
+
     query = f"""
         SELECT 
             {primary_col}, 
@@ -453,7 +299,7 @@ def get_interaction_data(con, time_filter, severity_filter, primary_col, seconda
         FROM collision
         WHERE 1=1
         {time_filter}
-        {severity_filter}
+        {sev}
         GROUP BY {primary_col}, {secondary_col}
     """
     return run_query(query, con)

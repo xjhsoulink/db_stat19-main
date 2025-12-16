@@ -4,7 +4,7 @@ import requests
 
 def download_data():
     """
-    Downloads the last 5 years of STATS19 data (Collision, Vehicle, Casualty)
+    Downloads STATS19 data (Collision, Vehicle, Casualty)
     from the official DfT website to data/raw.
     """
     base_url = "https://data.dft.gov.uk/road-accidents-safety-data/"
@@ -62,6 +62,14 @@ FILES = [
     "dft-road-casualty-statistics-vehicle-1979-latest-published-year.csv",
     "dft-road-casualty-statistics-casualty-1979-latest-published-year.csv",
 ]
+
+'''
+FILES = [
+    "dft-road-casualty-statistics-collision-last-5-years.csv",
+    "dft-road-casualty-statistics-vehicle-last-5-years.csv",
+    "dft-road-casualty-statistics-casualty-last-5-years.csv"
+]
+'''
 
 def download_file(file_name: str, dest_dir: str):
     url = f"{BASE_URL}/{file_name}"

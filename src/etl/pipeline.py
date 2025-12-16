@@ -329,6 +329,7 @@ def run_pipeline() -> None:
 
     cleaned_dfs: dict[str, pd.DataFrame] = {"code_map": schema_df}
 
+    
     files = [
         {
             "filename": "dft-road-casualty-statistics-casualty-1979-latest-published-year.csv",
@@ -343,6 +344,22 @@ def run_pipeline() -> None:
             "type": "vehicle",
         },
     ]
+    '''
+    files = [
+        {
+            "filename": "dft-road-casualty-statistics-casualty-last-5-years.csv",
+            "type": "casualty"
+        },
+        {
+            "filename": "dft-road-casualty-statistics-collision-last-5-years.csv",
+            "type": "collision"
+        },
+        {
+            "filename": "dft-road-casualty-statistics-vehicle-last-5-years.csv",
+            "type": "vehicle"
+        }
+    ]
+    '''
 
     for item in files:
         filename = item["filename"]
