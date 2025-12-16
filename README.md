@@ -1,79 +1,145 @@
-# GB Road Safety Dashboard
+# GB Road Safety Dashboard (STATS19)
 
-This project implements a reproducible data engineering pipeline and interactive dashboard for Great Britain's Road Safety Data (STATS19). It provides a Python + DuckDB-based alternative to existing R tooling, emphasizing analytic schema design, data quality enforcement, and interactive query performance.
+A reproducible data engineering pipeline + interactive dashboard for Great Britain road safety data (DfT STATS19).  
+This project focuses on **analytic schema design**, **data quality enforcement**, and **interactive query / visualization performance** using a Python-first stack.
 
-## Data Pipeline & Design Decisions
+---
 
-### 1. ETL Architecture
-We treat the official DfT specifications and the `stats19` R package schema as reference standards, while implementing an independent Python pipeline:
+## What’s in this repo
 
-- **Ingestion**: Raw DfT CSVs are processed with Pandas (we filter to `2000–2024` by default).
-- **Cleaning + Feature Engineering**: Dataset-specific cleaning is applied, and derived time features are added (e.g., `year`, `month_num`, `day_of_week`, `hour`).
-- **Schema Reference / Code Mapping**: We materialize a `code_map` dimension table from the DfT schema (CSV preferred; RDA fallback supported) and use it to validate/interpret categorical codes.
-- **Storage**: Cleaned outputs are written to DuckDB (`road_safety.duckdb`) for fast OLAP-style analytics. Geometry fields (if present) are stored as WKT strings for portability.
+### End-to-end workflow
+1. Download raw DfT STATS19 CSVs (Collision / Vehicle / Casualty)
+2. Clean + standardize + feature engineer (time fields, age groups, coordinate checks, etc.)
+3. Enforce referential integrity (drop orphan records)
+4. Export analysis-ready outputs:
+   - cleaned fact tables (Collision / Vehicle / Casualty)
+   - optional merged `master_dataset.csv` for offline analysis
+   - (optional) DuckDB database + materialized aggregates for fast dashboard queries
 
-### 2. Analytic Schema Design
-To support interactive dashboard queries, we transform raw transactional tables into an analytic schema:
+### Dashboard highlights (new)
+- **Hotspots (Map-based exploration)**  
+  Explore collision hotspots on an interactive map with filters (e.g., year/severity and other fields).  
+  Optional “click-to-select / recenter” interaction is supported when `folium` + `streamlit-folium` are installed.
 
-- **Fact Tables**: `collision`, `vehicle`, and `casualty` are linked via `collision_index`.
-- **Optional Master Join**: The pipeline can also export a merged `master_dataset.csv` for offline analysis; the dashboard primarily relies on the normalized fact tables plus precomputed aggregates.
-- **Indexes for Common Access Paths**: We create DuckDB indexes on key columns (e.g., `collision_index`, `year`) to accelerate joins and filters.
+- **Condition-aware Hotspots (Map + context filters)**  
+  A more advanced hotspot view that lets you analyze hotspots **under specific conditions** (e.g., weather/road/lighting-like attributes if present in your cleaned tables), enabling “apples-to-apples” comparisons.
 
-### 3. Performance: Materialized Aggregates (Pre-aggregation)
-To reduce repeated scans over large fact tables, we materialize several small aggregate tables during ETL:
+> Note: some interactions are intentionally two-step (select / filter first, then render charts/tables below) to avoid expensive re-renders over millions of rows.
 
-- **`kpi_monthly`**: monthly totals by severity (collisions, casualties, vehicles) plus adjusted-severity columns.
-- **`kpi_daily`**: daily totals by severity, with an index on `date` when supported.
-- **`by_hour` / `by_dow`**: distributions by hour-of-day and day-of-week (by severity).
-- **`collision_geopoints`**: a “map-ready” projection table containing lat/long + selected fields for fast plotting and filtering.
+---
 
-These tables trade a small amount of additional storage for substantial speedups in interactive KPI queries (reading hundreds/thousands of rows instead of scanning millions).
+## Data model (Analytic schema)
 
-**Updates / refresh policy**: When new data is added or corrected, rerunning the ETL pipeline rebuilds the DuckDB tables and all materialized aggregates via `CREATE OR REPLACE`, ensuring consistency. (The design can be extended to incremental refresh by year/month partitions.)
+We model STATS19 as a normalized analytic schema with three core fact tables:
 
-#### Why not pre-join everything?
-We avoid materializing a single denormalized “wide” table for all dashboard queries because it can significantly increase storage (duplicated decoded attributes across many rows). Instead, we keep normalized fact tables plus small materialized aggregates for the most common KPIs.
+- `collision` (accident-level / collision-level facts, time fields, coordinates)
+- `vehicle` (vehicle records associated with a collision)
+- `casualty` (casualty records associated with a collision)
 
-### 4. Data Quality Assurance
-Quality checks are enforced during ETL and validated via `pytest`:
+### Keys / relationships
+The three fact tables are linked by the official STATS19 collision identifier
+(commonly named `accident_index` in raw DfT files; some pipelines rename it to `collision_index`).
 
-- **Referential Integrity**: Orphaned `vehicle` / `casualty` rows without a valid `collision_index` are dropped to enforce FK consistency.
-- **Coordinate Validity**: Latitude/longitude are validated to fall within Great Britain bounds; only valid coordinates are included in `collision_geopoints`.
-- **Schema Consistency**: Categorical codes are validated against `code_map` to prevent undefined codes from entering the analysis.
+This pipeline enforces:
+- `vehicle.[key]` → `collision.[key]`
+- `casualty.[key]` → `collision.[key]`
+
+Any orphaned `vehicle` / `casualty` rows without a valid collision key are dropped during ETL.
+
+---
+
+## Temporal filtering (2000–2024)
+
+By default, we target `2000–2024`:
+
+- If a table has a reliable date/year field (typically `collision`), we filter directly by year.
+- If a table does **not** have a reliable date/year field (often `vehicle` / `casualty`), we enforce the same year range by **key cascading**:
+  keep only records whose collision key exists in the filtered `collision` table.
+
+This keeps the three tables consistent without relying on missing/unstable year columns.
+
+---
+
+## Data quality checks
+
+During ETL (and in tests), we enforce:
+
+- **Referential integrity**: drop orphan `vehicle` / `casualty` rows without a valid collision key
+- **Coordinate validity**: validate lat/long ranges (GB bounds) for map-ready outputs
+- **Schema consistency**: categorical codes can be validated/decoded via a materialized `code_map` dimension
+
+---
+
+## Outputs
+
+After running ETL, you should expect artifacts under `data/cleaned/` (paths may vary):
+
+- Cleaned fact tables (CSV):
+  - `...collision...csv`
+  - `...vehicle...csv`
+  - `...casualty...csv`
+- Optional denormalized export:
+  - `master_dataset.csv` (collision joined with vehicle/casualty fields as configured)
+
+If your configuration enables DuckDB loading, you may also get:
+- `road_safety.duckdb` containing normalized facts + (optional) aggregates
+
+---
+
 
 ## Setup and Usage
 
 1. **Environment Setup**
    Ensure Python 3.11+ is installed. Install dependencies:
    ```bash
+   python -m venv .venv
+   source .venv/bin/activate
    pip install -r requirements.txt
    ```
 
-2. **Download Data**  
+3. **Download Data**  
    Download the raw STATS19 datasets (Collision, Vehicle, Casualty) from the DfT website:
    ```bash
    python src/etl/download.py
    ```
-3. **Run ETL Pipeline**
+4. **Run ETL Pipeline**
    Process raw data, run quality checks, and generate the DuckDB database:
    ```bash
    python clean_stats19.py
    ```
-4. **Run Tests**
+5. **Run Tests**
    Verify data quality and schema integrity:
    ```bash
    pytest tests/test_etl.py
    ```
-5. **Launch Dashboard**
+6. **Launch Dashboard**
    Start the Streamlit application:
    ```bash
    streamlit run app.py
    ```
 
-## Project Structure
-   The project is organized into a modular structure under the src/ directory:
-   - **src/etl/**: ETL pipeline logic (cleaning, transformation, loading).
-   - **src/dashboard/**: Streamlit dashboard (tabs/components/data access).
-   - **src/shared/**: Shared utilities and configuration.
-   - **clean_stats19.py**: ETL entry point.
-   - **app.py**: Dashboard entry point.
+## Repo structure
+
+- `src/etl/` — ingestion, cleaning, transformation, loading
+- `src/dashboard/` — Streamlit UI + tabs
+  - `src/dashboard/tabs/hotspots.py` — hotspot map exploration
+  - `src/dashboard/tabs/conditionawarehotspots.py` — condition-aware hotspot analysis
+- `src/shared/` — shared utilities / config
+- `clean_stats19.py` — ETL entry point
+- `app.py` — Streamlit entry point
+- `tests/` — ETL / data quality tests
+- `ref/` — reference schema / metadata (DfT spec, code maps, etc.)
+
+## Notes on large data
+
+STATS19 can be large (tens of millions of rows across decades). Recommended practices:
+
+- Prefer filtering by year range early (collision) and cascade by key for consistency
+- Use pre-aggregations (monthly/daily/hourly/dow) or DuckDB queries for interactive speed
+- Avoid rendering full-resolution maps without sampling or filtering
+
+## License / attribution
+
+- Data source: UK Department for Transport (DfT) STATS19
+- Schema reference: DfT specifications and `stats19` R package conventions (used as reference standard)
+
