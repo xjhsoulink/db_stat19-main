@@ -8,3 +8,5 @@ shapely
 pytest
 requests
 pyreadr
+folium
+streamlit-folium
